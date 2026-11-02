@@ -171,7 +171,8 @@ tr:last-child td{border-bottom:0}
     </section>
 
     <section class="panel">
-      <h2>Pedidos por categoría</h2>
+      <h2>Equipos con más pedidos</h2>
+      <p class="note">Equipos o sectores edilicios que se repiten: candidatos a mantenimiento preventivo o reemplazo.</p>
       <div class="bars" id="chCat"></div>
     </section>
 
@@ -184,7 +185,7 @@ tr:last-child td{border-bottom:0}
 
     <section class="panel">
       <h2>Control higiénico post-mantenimiento</h2>
-      <p class="note">Órdenes cerradas donde el pedido marcó riesgo para la inocuidad.</p>
+      <p class="note">Órdenes cerradas con controles registrados en el formulario de cierre.</p>
       <div class="facts" id="chIno"></div>
     </section>
   </div>
@@ -193,7 +194,7 @@ tr:last-child td{border-bottom:0}
     <h2>Órdenes abiertas</h2>
     <p class="note">Ordenadas por tiempo restante hasta el vencimiento del SLA.</p>
     <div class="tablewrap"><table>
-      <thead><tr><th>OT</th><th>Servicio</th><th>Equipo</th><th>Categoría</th><th>Prioridad</th><th>Abierta hace</th><th>SLA</th></tr></thead>
+      <thead><tr><th>OT</th><th>Servicio</th><th>Equipo</th><th>Solicitante</th><th>Urgencia</th><th>Abierta hace</th><th>SLA</th></tr></thead>
       <tbody id="tbOpen"></tbody>
     </table></div>
   </section>
@@ -203,7 +204,7 @@ tr:last-child td{border-bottom:0}
 // ================= CONFIGURACIÓN =================
 const CONFIG = {
   cliente: 'Nombre del cliente',
-  sheetId: '',      // ID de la planilla: lo que va entre /d/ y /edit en la URL
+  sheetId: '1v6uqCUyKiqP0qjG9QHQMpS1sPv0sQQj5EJLv5v9D5_s',
   hoja: 'OT',
   formUrl: 'https://forms.gle/e1gTWqXsbfHhLGpG8',
   refrescoMin: 5
@@ -255,20 +256,22 @@ function date(s) { if (!s) return null; const d = new Date(String(s).replace(' '
 function normalize(r) {
   const now = new Date();
   const pedido = date(r['Fecha pedido']), fin = date(r['Fin trabajo']), inicio = date(r['Inicio trabajo']);
-  const prio = String(r['Prioridad'] || '').split(' ')[0];
+  const disp = date(r['Disponible desde']);
+  const t0 = pedido && disp && disp > pedido ? disp : pedido;   // el SLA corre desde que el equipo está disponible
+  const prio = String(r['Prioridad'] || '').trim();
   const sla = num(r['SLA (h)']) ?? SLA_DEF[prio] ?? null;
   const cerrada = !!fin;
-  const resolH = num(r['Resolución (h)']) ?? (cerrada && pedido ? (fin - pedido) / 36e5 : null);
-  const respH = num(r['Respuesta (h)']) ?? (inicio && pedido ? (inicio - pedido) / 36e5 : null);
-  const edadH = pedido ? (now - pedido) / 36e5 : null;
+  const resolH = num(r['Resolución (h)']) ?? (cerrada && t0 ? (fin - t0) / 36e5 : null);
+  const respH = num(r['Respuesta (h)']) ?? (inicio && t0 ? (inicio - t0) / 36e5 : null);
+  const edadH = t0 ? (now - t0) / 36e5 : null;
   let estadoSla = null;
-  if (sla && pedido) estadoSla = cerrada ? (resolH <= sla ? 'cumple' : 'excede') : (edadH > sla ? 'vencida' : 'plazo');
+  if (sla && t0) estadoSla = cerrada ? (resolH <= sla ? 'cumple' : 'excede') : edadH < 0 ? 'espera' : (edadH > sla ? 'vencida' : 'plazo');
+  const equipo = String(r['Equipo'] || '').trim();
   return {
-    ot: r['OT'], pedido, inicio, fin, cerrada, prio, sla, resolH, respH, edadH, estadoSla,
+    ot: r['OT'], pedido, inicio, fin, cerrada, prio, sla, resolH, respH, edadH, estadoSla, disp,
     mes: pedido ? `${pedido.getFullYear()}-${String(pedido.getMonth() + 1).padStart(2, '0')}` : '',
-    servicio: r['Servicio'] || 'Sin dato', equipo: r['Equipo'] || '', sector: r['Sector'] || '',
-    categoria: (r['Categoría'] || 'Sin dato').replace(/\s*\(.*\)$/, ''),
-    inocuidad: r['Afecta inocuidad'] === 'Sí', detenido: r['Fuera de servicio'],
+    servicio: r['Servicio'] || 'Sin dato', equipo, equipoKey: equipo.toLowerCase().replace(/\s+/g, ' '),
+    solicitante: r['Solicitante'] || '', urgencia: r['Urgencia (respuesta)'] || prio,
     ejecutor: r['Ejecutor'] || '', tipo: r['Tipo mantenimiento'] || '',
     costo: num(r['Costo total']), resultado: r['Resultado'] || '',
     herramientas: r['Control herramientas'] || '', limpieza: r['Limpieza post-mant.'] || '',
@@ -304,8 +307,8 @@ function sample() {
     const ext = rnd() < (cat.startsWith('Refri') || cat.startsWith('Clima') ? .6 : .2);
     const rec = {
       'OT': 'OT-' + String(i + 1).padStart(4, '0'), 'Fecha pedido': f(t), 'Servicio': pick(serv, [6, 5, 3, 2, 2, 1]),
-      'Equipo': pick(eq[cat]), 'Categoría': cat, 'Prioridad': prio, 'Afecta inocuidad': ino ? 'Sí' : 'No',
-      'Fuera de servicio': prio === 'Urgente' ? 'Sí' : 'No', 'SLA (h)': String(sla)
+      'Equipo': pick(eq[cat]), 'Prioridad': prio, 'Urgencia (respuesta)': prio, 'SLA (h)': String(sla),
+      'Solicitante': pick(['M. Gómez', 'L. Funes', 'C. Ortiz', 'P. Lucero', 'A. Videla'])
     };
     if (!open) Object.assign(rec, {
       'Inicio trabajo': f(t + resp * 36e5), 'Fin trabajo': f(t + resol * 36e5),
@@ -334,10 +337,11 @@ async function load() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const rows = parseCSV(await res.text());
     RECORDS = rows.length > 1 ? toObjects(rows).filter(r => r['OT']).map(normalize) : [];
-    SOURCE = { live: true, text: `<b>Planilla en vivo.</b> ${RECORDS.length} órdenes · actualizado ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}` };
+    const sinCierres = RECORDS.length && !RECORDS.some(r => r.cerrada);
+    SOURCE = { live: true, text: `<b>Planilla en vivo.</b> ${RECORDS.length} órdenes · actualizado ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}${sinCierres ? ' · Todavía no hay cierres: se suman cuando se conecte el formulario de cierre.' : ''}${RECORDS.length ? '' : ' · Sin órdenes todavía (o falta ejecutar instalar() en el script).'}` };
   } catch (e) {
     RECORDS = sample().map(normalize);
-    SOURCE = { live: false, text: '<b>No se pudo leer la planilla.</b> Revisá que esté compartida como "Cualquier persona con el enlace: Lector". Se muestran datos de ejemplo.' };
+    SOURCE = { live: false, text: '<b>Datos de ejemplo.</b> No se pudo leer la planilla: dentro de Claude no hay conexión con Google (en GitHub Pages sí). Si pasa en GitHub, revisá que esté compartida como "Cualquier persona con el enlace: Lector".' };
   }
   render();
 }
@@ -434,11 +438,11 @@ function render() {
   }).join('');
 
   // servicio y categoría
-  const group = key => {
-    const m = {}; D.forEach(r => { const k = r[key]; m[k] = m[k] || { k, v: 0, o: 0 }; m[k].v++; if (!r.cerrada) m[k].o++; });
+  const group = (key, label) => {
+    const m = {}; D.forEach(r => { const id = r[key] || '(sin dato)'; m[id] = m[id] || { k: r[label || key] || '(sin dato)', v: 0, o: 0 }; m[id].v++; if (!r.cerrada) m[id].o++; });
     return Object.values(m).sort((a, b) => b.v - a.v);
   };
-  const gs = group('servicio'), gc = group('categoria');
+  const gs = group('servicio'), gc = group('equipoKey', 'equipo');
   bars($('chServ'), gs, Math.max(1, ...gs.map(e => e.v)));
   bars($('chCat'), gc.slice(0, 8), Math.max(1, ...gc.map(e => e.v)));
 
@@ -458,32 +462,33 @@ function render() {
     fact('Costo medio por OT', cer.length ? money(costo / cer.length) : '—', 'repuestos + mano de obra');
 
   // inocuidad
-  const ino = cer.filter(r => r.inocuidad);
+  const ino = cer;
   const libEval = ino.filter(r => r.liberacion && r.liberacion !== 'No aplica');
   const lib = libEval.filter(r => r.liberacion === 'Liberado por Calidad').length;
   const limEval = ino.filter(r => r.limpieza && r.limpieza !== 'No aplica');
   const lim = limEval.filter(r => r.limpieza === 'Realizada').length;
   const falt = cer.filter(r => r.herramientas.startsWith('Faltante')).length;
-  const inoAb = ab.filter(r => r.inocuidad).length;
+  const espera = ab.filter(r => r.estadoSla === 'espera').length;
   $('chIno').innerHTML =
     fact('Liberadas por Calidad', pct(libEval.length ? lib / libEval.length : null), `${lib} de ${libEval.length} · ${libEval.length - lib} pendientes`) +
     fact('Limpieza post-mantenimiento', pct(limEval.length ? lim / limEval.length : null), `${lim} de ${limEval.length} registradas`) +
     fact('Faltantes de herramientas o piezas', falt, falt ? 'revisar riesgo de cuerpo extraño' : 'sin hallazgos') +
-    fact('Abiertas con riesgo de inocuidad', inoAb, inoAb ? 'requieren seguimiento de Calidad' : 'ninguna');
+    fact('Esperando que el equipo se libere', espera, espera ? 'el SLA todavía no corre' : 'ninguna');
 
   // tabla de abiertas
   const rows = ab.slice().sort((a, b) => ((a.sla ?? 1e9) - (a.edadH ?? 0)) - ((b.sla ?? 1e9) - (b.edadH ?? 0)));
   $('tbOpen').innerHTML = rows.length ? rows.map(r => {
     const rest = r.sla !== null && r.edadH !== null ? r.sla - r.edadH : null;
     const chip = rest === null ? '<span class="chip info">sin SLA</span>'
+      : r.edadH < 0 ? `<span class="chip info">equipo disponible en ${hrs(-r.edadH)}</span>`
       : rest < 0 ? `<span class="chip crit">vencida hace ${hrs(-rest)}</span>`
       : rest < r.sla * .25 ? `<span class="chip warn">vence en ${hrs(rest)}</span>`
       : `<span class="chip good">quedan ${hrs(rest)}</span>`;
     const pc = r.prio === 'Urgente' ? 'crit' : r.prio === 'Alta' ? 'warn' : 'info';
     return `<tr><td class="code">${esc(r.ot)}</td><td>${esc(r.servicio)}</td>
-      <td>${esc(r.equipo)}${r.inocuidad ? '<br><span class="flag">Riesgo de inocuidad</span>' : ''}</td>
-      <td>${esc(r.categoria)}</td><td><span class="chip ${pc}">${esc(r.prio || '—')}</span></td>
-      <td class="num">${hrs(r.edadH)}</td><td>${chip}</td></tr>`;
+      <td>${esc(r.equipo)}</td>
+      <td>${esc(r.solicitante)}</td><td><span class="chip ${pc}">${esc(r.urgencia || '—')}</span></td>
+      <td class="num">${r.edadH < 0 ? '—' : hrs(r.edadH)}</td><td>${chip}</td></tr>`;
   }).join('') : '<tr><td colspan="7" class="empty">No hay órdenes abiertas en este filtro.</td></tr>';
 }
 
