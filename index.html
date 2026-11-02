@@ -1,0 +1,492 @@
+<title>Tablero de Mantenimiento</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: work-order board — summary strip on top, paired panels below, open orders table last */
+:root{
+  --bg:#edf0f3; --surface:#ffffff; --ink:#1a2330; --muted:#5d6878; --line:#d4dae2;
+  --accent:#245f8e; --accent-soft:#dbe7f1;
+  --good:#2b8656; --warn:#b97f0d; --crit:#bf3a2c;
+  --good-soft:#dcefe3; --warn-soft:#f5ead2; --crit-soft:#f6dcd8;
+  --f-display:"Barlow Condensed","Arial Narrow",sans-serif;
+  --f-body:"Public Sans",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11161c; --surface:#19212a; --ink:#e3e8ee; --muted:#93a0b0; --line:#2a3440;
+  --accent:#78acd8; --accent-soft:#1f3245;
+  --good:#53bd85; --warn:#e2ab3c; --crit:#ee6e5f;
+  --good-soft:#18332a; --warn-soft:#3a2f17; --crit-soft:#3e1f1b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11161c; --surface:#19212a; --ink:#e3e8ee; --muted:#93a0b0; --line:#2a3440;
+  --accent:#78acd8; --accent-soft:#1f3245;
+  --good:#53bd85; --warn:#e2ab3c; --crit:#ee6e5f;
+  --good-soft:#18332a; --warn-soft:#3a2f17; --crit-soft:#3e1f1b; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.45}
+.wrap{max-width:1240px;margin:0 auto;padding-block:20px 48px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:grid;gap:16px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px}
+.eyebrow{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600}
+h1{font-family:var(--f-display);font-weight:700;font-size:34px;line-height:1;margin:4px 0 0;text-wrap:balance}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+select,button,.filebtn{font:inherit;font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--line);
+  border-radius:6px;padding:7px 10px;cursor:pointer}
+select:focus-visible,button:focus-visible,.filebtn:focus-within{outline:2px solid var(--accent);outline-offset:1px}
+.cta{font-size:13px;font-weight:600;text-decoration:none;color:var(--surface);background:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:7px 12px}
+.cta:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.filebtn input{position:absolute;opacity:0;width:1px;height:1px}
+.source{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);padding:8px 12px;
+  background:var(--surface);border:1px dashed var(--line);border-radius:6px}
+.source b{color:var(--ink);font-weight:600}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--warn);flex:none}
+.dot.live{background:var(--good)}
+
+.kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));background:var(--surface);border:1px solid var(--line);border-radius:8px}
+.kpi{padding:14px 16px;display:grid;gap:2px;border-left:1px solid var(--line);min-width:0}
+.kpi:first-child{border-left:0}
+.kpi .lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.kpi .val{font-family:var(--f-display);font-weight:600;font-size:36px;line-height:1.05;font-variant-numeric:tabular-nums}
+.kpi .sub{font-size:12px;color:var(--muted)}
+.kpi .val.good{color:var(--good)} .kpi .val.warn{color:var(--warn)} .kpi .val.crit{color:var(--crit)}
+
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px;display:grid;gap:12px;align-content:start;min-width:0}
+.panel h2{font-family:var(--f-display);font-weight:600;font-size:20px;margin:0;line-height:1.1}
+.panel .note{font-size:12px;color:var(--muted);margin:-8px 0 0}
+
+/* monthly columns */
+.cols{display:flex;align-items:flex-end;gap:10px;height:190px;padding-top:18px;border-bottom:1px solid var(--line)}
+.col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;height:100%;position:relative;min-width:0}
+.col .n{position:absolute;left:0;right:0;text-align:center;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
+.col .seg{border-radius:3px 3px 0 0}
+.col .seg.c{background:var(--accent);border-radius:0}
+.col .seg.o{background:var(--warn)}
+.col .seg.c:only-child,.col .seg.c:first-child{border-radius:3px 3px 0 0}
+.collabels{display:flex;gap:10px;margin-top:6px}
+.collabels span{flex:1;text-align:center;font-size:12px;color:var(--muted)}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+
+/* horizontal bars */
+.bars{display:grid;gap:8px}
+.bar{display:grid;grid-template-columns:minmax(0,150px) minmax(0,1fr) 64px;gap:10px;align-items:center}
+.bar .k{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar .track{height:14px;background:var(--bg);border-radius:3px;position:relative;overflow:visible}
+.bar .fill{height:100%;background:var(--accent);border-radius:3px}
+.bar .fill.o{background:var(--warn);position:absolute;top:0;left:0;border-radius:3px 0 0 3px;opacity:.95}
+.bar .v{text-align:right;font-variant-numeric:tabular-nums;font-size:13px;font-weight:600}
+.bar .v small{font-weight:400;color:var(--muted)}
+
+/* SLA by priority */
+.prio{display:grid;gap:14px}
+.prow{display:grid;gap:5px}
+.prow .top{display:flex;justify-content:space-between;gap:8px;font-size:13px;flex-wrap:wrap}
+.prow .top b{font-weight:600}
+.prow .top span{color:var(--muted);font-variant-numeric:tabular-nums}
+.ptrack{height:16px;background:var(--bg);border-radius:3px;position:relative}
+.ptrack .fill{height:100%;border-radius:3px}
+.ptrack .mark{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--ink)}
+.ptrack .mark::after{content:"SLA";position:absolute;top:-14px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--muted);letter-spacing:.06em}
+
+/* split */
+.split{display:flex;height:22px;border-radius:4px;overflow:hidden}
+.split div{display:flex;align-items:center;padding:0 8px;font-size:12px;font-weight:600;color:var(--surface);white-space:nowrap;min-width:0;overflow:hidden}
+.facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.fact{border:1px solid var(--line);border-radius:6px;padding:10px 12px;display:grid;gap:2px}
+.fact .lbl{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.fact .val{font-family:var(--f-display);font-size:26px;font-weight:600;line-height:1.1;font-variant-numeric:tabular-nums}
+.fact .sub{font-size:12px;color:var(--muted)}
+
+/* table */
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+.code{font-family:var(--f-mono);font-size:12px;white-space:nowrap}
+.chip{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.chip.crit{background:var(--crit-soft);color:var(--crit)}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.chip.good{background:var(--good-soft);color:var(--good)}
+.chip.info{background:var(--accent-soft);color:var(--accent)}
+.flag{color:var(--crit);font-size:12px;font-weight:600}
+.empty{color:var(--muted);font-size:13px;padding:8px 0}
+
+@media (max-width:980px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .kpi:nth-child(4){border-left:0}.kpi:nth-child(n+4){border-top:1px solid var(--line)}}
+@media (max-width:760px){.grid{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:520px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kpi{border-left:0;border-top:1px solid var(--line)}.kpi:nth-child(-n+2){border-top:0}.kpi:nth-child(2n){border-left:1px solid var(--line)}
+  .bar{grid-template-columns:minmax(0,110px) minmax(0,1fr) 56px}.kpi .val{font-size:30px}h1{font-size:28px}}
+@media (prefers-reduced-motion:no-preference){.fill,.seg{transition:width .3s,height .3s}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow" id="cliente">Mantenimiento</div>
+      <h1>Órdenes de trabajo</h1>
+    </div>
+    <div class="controls">
+      <label for="fMes" class="eyebrow" style="letter-spacing:.08em">Período</label>
+      <select id="fMes"></select>
+      <label for="fServ" class="eyebrow" style="letter-spacing:.08em">Servicio</label>
+      <select id="fServ"></select>
+      <a id="lnkForm" class="cta" href="https://forms.gle/e1gTWqXsbfHhLGpG8" target="_blank" rel="noopener">Cargar pedido</a>
+      <button id="btnRefresh" type="button">Actualizar</button>
+      <label class="filebtn">Cargar CSV<input id="fileCsv" type="file" accept=".csv,text/csv"></label>
+    </div>
+  </header>
+
+  <div class="source" id="source"><span class="dot"></span><span>Cargando…</span></div>
+
+  <section class="kpis" id="kpis" aria-label="Indicadores principales"></section>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>Pedidos por mes</h2>
+      <p class="note">Últimos 6 meses según fecha de pedido.</p>
+      <div>
+        <div class="cols" id="chMes"></div>
+        <div class="collabels" id="chMesL"></div>
+      </div>
+      <div class="legend"><span><i style="background:var(--accent)"></i>Cerradas</span><span><i style="background:var(--warn)"></i>Abiertas</span></div>
+    </section>
+
+    <section class="panel">
+      <h2>Resolución contra SLA, por prioridad</h2>
+      <p class="note">Barra: horas promedio desde el pedido hasta la finalización. Línea: plazo máximo.</p>
+      <div class="prio" id="chPrio"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Pedidos por servicio</h2>
+      <p class="note">El tramo ámbar son las órdenes que siguen abiertas.</p>
+      <div class="bars" id="chServ"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Pedidos por categoría</h2>
+      <div class="bars" id="chCat"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Interno o externo</h2>
+      <p class="note">Órdenes cerradas, según quién realizó la reparación.</p>
+      <div class="split" id="chSplit"></div>
+      <div class="facts" id="chExt"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Control higiénico post-mantenimiento</h2>
+      <p class="note">Órdenes cerradas donde el pedido marcó riesgo para la inocuidad.</p>
+      <div class="facts" id="chIno"></div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <h2>Órdenes abiertas</h2>
+    <p class="note">Ordenadas por tiempo restante hasta el vencimiento del SLA.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>OT</th><th>Servicio</th><th>Equipo</th><th>Categoría</th><th>Prioridad</th><th>Abierta hace</th><th>SLA</th></tr></thead>
+      <tbody id="tbOpen"></tbody>
+    </table></div>
+  </section>
+</div>
+
+<script>
+// ================= CONFIGURACIÓN =================
+const CONFIG = {
+  cliente: 'Nombre del cliente',
+  sheetId: '',      // ID de la planilla: lo que va entre /d/ y /edit en la URL
+  hoja: 'OT',
+  formUrl: 'https://forms.gle/e1gTWqXsbfHhLGpG8',
+  refrescoMin: 5
+};
+const SLA_DEF = { Urgente: 4, Alta: 24, Media: 72, Baja: 168 };
+const PRIOS = ['Urgente', 'Alta', 'Media', 'Baja'];
+// =================================================
+
+const $ = id => document.getElementById(id);
+const nf = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 });
+const nf0 = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 });
+const money = v => '$ ' + (v >= 1e6 ? nf.format(v / 1e6) + ' M' : nf0.format(v));
+const pct = v => (v === null ? '—' : nf0.format(v * 100) + ' %');
+const hrs = h => h === null || isNaN(h) ? '—' : h < 48 ? nf.format(h) + ' h' : nf.format(h / 24) + ' d';
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const mesLbl = m => { const [y, mm] = m.split('-'); return new Date(+y, +mm - 1, 1).toLocaleDateString('es-AR', { month: 'short', year: 'numeric' }).replace('.', ''); };
+const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+
+let RECORDS = [], SOURCE = { live: false, text: '' };
+
+function parseCSV(t) {
+  const rows = []; let row = [], f = '', q = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (q) { if (c === '"') { if (t[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+    else if (c === '"') q = true;
+    else if (c === ',') { row.push(f); f = ''; }
+    else if (c === '\n') { row.push(f); rows.push(row); row = []; f = ''; }
+    else if (c !== '\r') f += c;
+  }
+  if (f || row.length) { row.push(f); rows.push(row); }
+  return rows.filter(r => r.some(x => x !== ''));
+}
+
+function toObjects(rows) {
+  const h = rows[0].map(x => x.trim());
+  return rows.slice(1).map(r => Object.fromEntries(h.map((k, i) => [k, (r[i] ?? '').trim()])));
+}
+
+function num(s) {
+  if (s === null || s === undefined || s === '') return null;
+  let t = String(s).replace(/[^\d,.\-]/g, '');
+  if (t.includes(',') && t.includes('.')) t = t.replace(/\./g, '').replace(',', '.');
+  else if (t.includes(',')) t = t.replace(',', '.');
+  const n = parseFloat(t); return isNaN(n) ? null : n;
+}
+function date(s) { if (!s) return null; const d = new Date(String(s).replace(' ', 'T')); return isNaN(d) ? null : d; }
+
+function normalize(r) {
+  const now = new Date();
+  const pedido = date(r['Fecha pedido']), fin = date(r['Fin trabajo']), inicio = date(r['Inicio trabajo']);
+  const prio = String(r['Prioridad'] || '').split(' ')[0];
+  const sla = num(r['SLA (h)']) ?? SLA_DEF[prio] ?? null;
+  const cerrada = !!fin;
+  const resolH = num(r['Resolución (h)']) ?? (cerrada && pedido ? (fin - pedido) / 36e5 : null);
+  const respH = num(r['Respuesta (h)']) ?? (inicio && pedido ? (inicio - pedido) / 36e5 : null);
+  const edadH = pedido ? (now - pedido) / 36e5 : null;
+  let estadoSla = null;
+  if (sla && pedido) estadoSla = cerrada ? (resolH <= sla ? 'cumple' : 'excede') : (edadH > sla ? 'vencida' : 'plazo');
+  return {
+    ot: r['OT'], pedido, inicio, fin, cerrada, prio, sla, resolH, respH, edadH, estadoSla,
+    mes: pedido ? `${pedido.getFullYear()}-${String(pedido.getMonth() + 1).padStart(2, '0')}` : '',
+    servicio: r['Servicio'] || 'Sin dato', equipo: r['Equipo'] || '', sector: r['Sector'] || '',
+    categoria: (r['Categoría'] || 'Sin dato').replace(/\s*\(.*\)$/, ''),
+    inocuidad: r['Afecta inocuidad'] === 'Sí', detenido: r['Fuera de servicio'],
+    ejecutor: r['Ejecutor'] || '', tipo: r['Tipo mantenimiento'] || '',
+    costo: num(r['Costo total']), resultado: r['Resultado'] || '',
+    herramientas: r['Control herramientas'] || '', limpieza: r['Limpieza post-mant.'] || '',
+    liberacion: r['Liberación Calidad'] || ''
+  };
+}
+
+// ---------- datos de ejemplo ----------
+function sample() {
+  let s = 11; const rnd = () => (s = (s * 16807) % 2147483647, (s - 1) / 2147483646);
+  const pick = (a, w) => { if (!w) return a[Math.floor(rnd() * a.length)]; let x = rnd() * w.reduce((p, q) => p + q, 0); for (let i = 0; i < a.length; i++) { x -= w[i]; if (x <= 0) return a[i]; } return a[a.length - 1]; };
+  const serv = ['Cocina central', 'Planta de elaboración', 'Depósito / Almacén', 'Lavadero', 'Comedor', 'Administración'];
+  const eq = {
+    'Refrigeración (cámaras, heladeras, freezers)': ['Cámara de frío 1', 'Cámara de congelados', 'Heladera bajo mesada'],
+    'Equipos de cocción': ['Horno convector', 'Marmita 300 L', 'Anafe industrial'],
+    'Equipos de proceso': ['Cortadora de fiambre', 'Batidora planetaria', 'Envasadora al vacío'],
+    'Eléctrica': ['Tablero seccional', 'Luminaria zona de envasado', 'Tomacorriente mesada'],
+    'Gas': ['Regulador de línea', 'Llave de paso cocina'],
+    'Agua / Sanitaria': ['Termotanque', 'Pileta lavamanos', 'Desagüe rejilla'],
+    'Edilicia (pisos, paredes, techos, aberturas)': ['Zócalo sanitario', 'Puerta de cámara', 'Cielorraso'],
+    'Climatización / Ventilación': ['Campana extractora', 'Split depósito']
+  };
+  const cats = Object.keys(eq), cw = [6, 5, 3, 3, 1, 3, 3, 2];
+  const now = Date.now(), span = 150 * 864e5, out = [];
+  const f = d => { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')} ${String(x.getHours()).padStart(2, '0')}:${String(x.getMinutes()).padStart(2, '0')}`; };
+  const times = Array.from({ length: 84 }, () => now - span * Math.pow(rnd(), 0.85)).sort((a, b) => a - b);
+  times.forEach((t, i) => {
+    const prio = pick(PRIOS, [2, 4, 5, 2]), sla = SLA_DEF[prio], cat = pick(cats, cw);
+    const ino = cat.startsWith('Refri') || cat.startsWith('Edil') ? rnd() < .6 : rnd() < .2;
+    const resol = rnd() < .8 ? sla * (.2 + rnd() * .75) : sla * (1.1 + rnd() * 1.6);
+    const resp = resol * (.15 + rnd() * .35);
+    const open = t + resol * 36e5 > now || (now - t < 8 * 864e5 && rnd() < .3);
+    const ext = rnd() < (cat.startsWith('Refri') || cat.startsWith('Clima') ? .6 : .2);
+    const rec = {
+      'OT': 'OT-' + String(i + 1).padStart(4, '0'), 'Fecha pedido': f(t), 'Servicio': pick(serv, [6, 5, 3, 2, 2, 1]),
+      'Equipo': pick(eq[cat]), 'Categoría': cat, 'Prioridad': prio, 'Afecta inocuidad': ino ? 'Sí' : 'No',
+      'Fuera de servicio': prio === 'Urgente' ? 'Sí' : 'No', 'SLA (h)': String(sla)
+    };
+    if (!open) Object.assign(rec, {
+      'Inicio trabajo': f(t + resp * 36e5), 'Fin trabajo': f(t + resol * 36e5),
+      'Ejecutor': ext ? 'Externo' : 'Interno', 'Tipo mantenimiento': pick(['Correctivo', 'Preventivo', 'Mejora / modificación'], [7, 2, 1]),
+      'Costo total': String(Math.round((ext ? 60000 + rnd() * 340000 : 4000 + rnd() * 45000) / 500) * 500),
+      'Resultado': rnd() < .9 ? 'Operativo' : 'Operativo con restricciones',
+      'Control herramientas': rnd() < .95 ? 'Completo, sin faltantes' : 'Faltante detectado — informado a Calidad',
+      'Limpieza post-mant.': ino ? (rnd() < .85 ? 'Realizada' : 'No realizada') : 'No aplica',
+      'Liberación Calidad': ino ? (rnd() < .8 ? 'Liberado por Calidad' : 'Pendiente de liberación') : 'No aplica'
+    });
+    out.push(rec);
+  });
+  return out;
+}
+
+// ---------- carga ----------
+async function load() {
+  if (!CONFIG.sheetId) {
+    RECORDS = sample().map(normalize);
+    SOURCE = { live: false, text: '<b>Datos de ejemplo.</b> Cargá el ID de la planilla en la configuración del tablero o un CSV exportado de la hoja OT.' };
+    return render();
+  }
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.sheetId}/gviz/tq?tqx=out:csv&headers=1&sheet=${encodeURIComponent(CONFIG.hoja)}&_=${Date.now()}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const rows = parseCSV(await res.text());
+    RECORDS = rows.length > 1 ? toObjects(rows).filter(r => r['OT']).map(normalize) : [];
+    SOURCE = { live: true, text: `<b>Planilla en vivo.</b> ${RECORDS.length} órdenes · actualizado ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}` };
+  } catch (e) {
+    RECORDS = sample().map(normalize);
+    SOURCE = { live: false, text: '<b>No se pudo leer la planilla.</b> Revisá que esté compartida como "Cualquier persona con el enlace: Lector". Se muestran datos de ejemplo.' };
+  }
+  render();
+}
+
+$('fileCsv').addEventListener('change', ev => {
+  const file = ev.target.files[0]; if (!file) return;
+  const fr = new FileReader();
+  fr.onload = () => {
+    const rows = parseCSV(fr.result);
+    RECORDS = rows.length > 1 ? toObjects(rows).filter(r => r['OT']).map(normalize) : [];
+    SOURCE = { live: true, text: `<b>CSV cargado:</b> ${esc(file.name)} · ${RECORDS.length} órdenes` };
+    render();
+  };
+  fr.readAsText(file);
+});
+$('btnRefresh').addEventListener('click', load);
+$('fMes').addEventListener('change', render);
+$('fServ').addEventListener('change', render);
+
+// ---------- render ----------
+function fillSelect(el, opts, keep) {
+  const cur = el.value;
+  el.innerHTML = opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
+  if (keep && opts.some(o => o[0] === cur)) el.value = cur;
+}
+
+function bars(el, entries, max) {
+  el.innerHTML = entries.length ? entries.map(e => `
+    <div class="bar"><span class="k" title="${esc(e.k)}">${esc(e.k)}</span>
+      <div class="track"><div class="fill" style="width:${(e.v / max * 100).toFixed(1)}%;position:relative">
+        ${e.o ? `<div class="fill o" style="width:${(e.o / e.v * 100).toFixed(1)}%;left:auto;right:0;border-radius:0 3px 3px 0"></div>` : ''}</div></div>
+      <span class="v">${e.v}${e.o ? ` <small>· ${e.o} ab.</small>` : ''}</span></div>`).join('')
+    : '<div class="empty">Sin pedidos en el período.</div>';
+}
+
+function render() {
+  $('cliente').textContent = 'Mantenimiento · ' + CONFIG.cliente;
+  $('lnkForm').href = CONFIG.formUrl;
+  $('source').innerHTML = `<span class="dot${SOURCE.live ? ' live' : ''}"></span><span>${SOURCE.text}</span>`;
+
+  const meses = [...new Set(RECORDS.map(r => r.mes).filter(Boolean))].sort().reverse();
+  fillSelect($('fMes'), [['', 'Todo el registro'], ...meses.map(m => [m, mesLbl(m)])], true);
+  const servs = [...new Set(RECORDS.map(r => r.servicio))].sort();
+  fillSelect($('fServ'), [['', 'Todos'], ...servs.map(s => [s, s])], true);
+
+  const fm = $('fMes').value, fs = $('fServ').value;
+  const byServ = RECORDS.filter(r => !fs || r.servicio === fs);
+  const D = byServ.filter(r => !fm || r.mes === fm);
+  const cer = D.filter(r => r.cerrada), ab = D.filter(r => !r.cerrada);
+  const conSla = cer.filter(r => r.estadoSla);
+  const cumple = conSla.length ? conSla.filter(r => r.estadoSla === 'cumple').length / conSla.length : null;
+  const venc = ab.filter(r => r.estadoSla === 'vencida').length;
+  const resp = avg(D.filter(r => r.respH !== null).map(r => r.respH));
+  const resol = avg(cer.filter(r => r.resolH !== null).map(r => r.resolH));
+  const costo = cer.reduce((a, r) => a + (r.costo || 0), 0);
+  const ext = cer.filter(r => r.ejecutor === 'Externo');
+  const costoExt = ext.reduce((a, r) => a + (r.costo || 0), 0);
+
+  const tone = cumple === null ? '' : cumple >= .9 ? 'good' : cumple >= .75 ? 'warn' : 'crit';
+  $('kpis').innerHTML = [
+    ['Pedidos', D.length, `${cer.length} cerradas`],
+    ['Abiertas', ab.length, venc ? `<span class="flag">${venc} fuera de SLA</span>` : 'Ninguna vencida', venc ? 'crit' : ''],
+    ['Cumplimiento SLA', pct(cumple), `${conSla.length} cerradas evaluadas`, tone],
+    ['Respuesta media', hrs(resp), 'pedido → inicio del trabajo'],
+    ['Resolución media', hrs(resol), 'pedido → equipo operativo'],
+    ['Costo total', money(costo), cer.length ? `${pct(costoExt / (costo || 1))} en proveedores` : 'sin cierres']
+  ].map(([l, v, s, t]) => `<div class="kpi"><span class="lbl">${l}</span><span class="val ${t || ''}">${v}</span><span class="sub">${s}</span></div>`).join('');
+
+  // pedidos por mes (últimos 6, respetan filtro de servicio)
+  const ult = meses.slice(0, 6).reverse();
+  const cnt = ult.map(m => { const a = byServ.filter(r => r.mes === m); return { m, c: a.filter(r => r.cerrada).length, o: a.filter(r => !r.cerrada).length }; });
+  const mx = Math.max(1, ...cnt.map(x => x.c + x.o));
+  $('chMes').innerHTML = cnt.map(x => {
+    const tot = x.c + x.o, h = tot / mx * 100;
+    return `<div class="col" title="${mesLbl(x.m)}: ${x.c} cerradas, ${x.o} abiertas">
+      <span class="n" style="bottom:calc(${h}% + 2px)">${tot}</span>
+      ${x.o ? `<div class="seg o" style="height:${(x.o / mx * 100).toFixed(1)}%"></div>` : ''}
+      ${x.c ? `<div class="seg c" style="height:${(x.c / mx * 100).toFixed(1)}%;${x.o ? '' : 'border-radius:3px 3px 0 0'}"></div>` : ''}</div>`;
+  }).join('') || '<div class="empty">Sin datos.</div>';
+  $('chMesL').innerHTML = cnt.map(x => `<span>${mesLbl(x.m).split(' ')[0]}</span>`).join('');
+
+  // SLA por prioridad
+  const pr = PRIOS.map(p => {
+    const a = cer.filter(r => r.prio === p && r.resolH !== null);
+    const sla = SLA_DEF[p];
+    return { p, n: a.length, avg: avg(a.map(r => r.resolH)), sla, ok: a.length ? a.filter(r => r.resolH <= sla).length / a.length : null };
+  });
+  $('chPrio').innerHTML = pr.map(x => {
+    const scale = Math.max(x.sla * 1.6, (x.avg || 0) * 1.1);
+    const col = x.avg === null ? 'var(--line)' : x.avg <= x.sla ? 'var(--good)' : 'var(--crit)';
+    return `<div class="prow"><div class="top"><b>${x.p}</b><span>${x.n ? `prom. ${hrs(x.avg)} · SLA ${hrs(x.sla)} · ${pct(x.ok)} en plazo` : `sin cierres · SLA ${hrs(x.sla)}`}</span></div>
+      <div class="ptrack"><div class="fill" style="width:${x.avg === null ? 0 : (x.avg / scale * 100).toFixed(1)}%;background:${col}"></div>
+      <div class="mark" style="left:${(x.sla / scale * 100).toFixed(1)}%"></div></div></div>`;
+  }).join('');
+
+  // servicio y categoría
+  const group = key => {
+    const m = {}; D.forEach(r => { const k = r[key]; m[k] = m[k] || { k, v: 0, o: 0 }; m[k].v++; if (!r.cerrada) m[k].o++; });
+    return Object.values(m).sort((a, b) => b.v - a.v);
+  };
+  const gs = group('servicio'), gc = group('categoria');
+  bars($('chServ'), gs, Math.max(1, ...gs.map(e => e.v)));
+  bars($('chCat'), gc.slice(0, 8), Math.max(1, ...gc.map(e => e.v)));
+
+  // interno / externo
+  const int = cer.filter(r => r.ejecutor === 'Interno');
+  const tot = int.length + ext.length;
+  $('chSplit').innerHTML = tot ? `
+    ${int.length ? `<div style="width:${int.length / tot * 100}%;background:var(--accent)">Interno ${pct(int.length / tot)}</div>` : ''}
+    ${ext.length ? `<div style="width:${ext.length / tot * 100}%;background:var(--muted)">Externo ${pct(ext.length / tot)}</div>` : ''}`
+    : '<div class="empty" style="color:var(--muted)">Sin cierres.</div>';
+  const fact = (l, v, s) => `<div class="fact"><span class="lbl">${l}</span><span class="val">${v}</span><span class="sub">${s}</span></div>`;
+  const prev = cer.filter(r => r.tipo === 'Preventivo').length;
+  $('chExt').innerHTML =
+    fact('Resolución interna', hrs(avg(int.map(r => r.resolH).filter(v => v !== null))), `${int.length} órdenes · ${money(int.reduce((a, r) => a + (r.costo || 0), 0))}`) +
+    fact('Resolución externa', hrs(avg(ext.map(r => r.resolH).filter(v => v !== null))), `${ext.length} órdenes · ${money(costoExt)}`) +
+    fact('Preventivo', pct(cer.length ? prev / cer.length : null), `${prev} de ${cer.length} cierres`) +
+    fact('Costo medio por OT', cer.length ? money(costo / cer.length) : '—', 'repuestos + mano de obra');
+
+  // inocuidad
+  const ino = cer.filter(r => r.inocuidad);
+  const libEval = ino.filter(r => r.liberacion && r.liberacion !== 'No aplica');
+  const lib = libEval.filter(r => r.liberacion === 'Liberado por Calidad').length;
+  const limEval = ino.filter(r => r.limpieza && r.limpieza !== 'No aplica');
+  const lim = limEval.filter(r => r.limpieza === 'Realizada').length;
+  const falt = cer.filter(r => r.herramientas.startsWith('Faltante')).length;
+  const inoAb = ab.filter(r => r.inocuidad).length;
+  $('chIno').innerHTML =
+    fact('Liberadas por Calidad', pct(libEval.length ? lib / libEval.length : null), `${lib} de ${libEval.length} · ${libEval.length - lib} pendientes`) +
+    fact('Limpieza post-mantenimiento', pct(limEval.length ? lim / limEval.length : null), `${lim} de ${limEval.length} registradas`) +
+    fact('Faltantes de herramientas o piezas', falt, falt ? 'revisar riesgo de cuerpo extraño' : 'sin hallazgos') +
+    fact('Abiertas con riesgo de inocuidad', inoAb, inoAb ? 'requieren seguimiento de Calidad' : 'ninguna');
+
+  // tabla de abiertas
+  const rows = ab.slice().sort((a, b) => ((a.sla ?? 1e9) - (a.edadH ?? 0)) - ((b.sla ?? 1e9) - (b.edadH ?? 0)));
+  $('tbOpen').innerHTML = rows.length ? rows.map(r => {
+    const rest = r.sla !== null && r.edadH !== null ? r.sla - r.edadH : null;
+    const chip = rest === null ? '<span class="chip info">sin SLA</span>'
+      : rest < 0 ? `<span class="chip crit">vencida hace ${hrs(-rest)}</span>`
+      : rest < r.sla * .25 ? `<span class="chip warn">vence en ${hrs(rest)}</span>`
+      : `<span class="chip good">quedan ${hrs(rest)}</span>`;
+    const pc = r.prio === 'Urgente' ? 'crit' : r.prio === 'Alta' ? 'warn' : 'info';
+    return `<tr><td class="code">${esc(r.ot)}</td><td>${esc(r.servicio)}</td>
+      <td>${esc(r.equipo)}${r.inocuidad ? '<br><span class="flag">Riesgo de inocuidad</span>' : ''}</td>
+      <td>${esc(r.categoria)}</td><td><span class="chip ${pc}">${esc(r.prio || '—')}</span></td>
+      <td class="num">${hrs(r.edadH)}</td><td>${chip}</td></tr>`;
+  }).join('') : '<tr><td colspan="7" class="empty">No hay órdenes abiertas en este filtro.</td></tr>';
+}
+
+load();
+if (CONFIG.sheetId) setInterval(load, CONFIG.refrescoMin * 60000);
+</script>
